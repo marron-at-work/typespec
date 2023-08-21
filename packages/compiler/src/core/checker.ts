@@ -62,6 +62,7 @@ import {
   MemberExpressionNode,
   MemberNode,
   MemberType,
+  MetaMemberKey,
   Model,
   ModelExpressionNode,
   ModelIndexer,
@@ -351,6 +352,7 @@ export function createChecker(program: Program): Checker {
     }
   }
 
+  const sharedMetaInterfaces: Partial<Record<MetaMemberKey, Sym>> = createSharedMetaInterfaces();
   let evalContext: EvalContext | undefined = undefined;
 
   const checker: Checker = {
@@ -412,6 +414,21 @@ export function createChecker(program: Program): Checker {
     mutate(typespecNamespaceBinding!.exports).set("null", nullSym);
     mutate(nullSym).type = nullType;
     getSymbolLinks(nullSym).type = nullType;
+  }
+
+  function createSharedMetaInterfaces(): Partial<Record<MetaMemberKey, Sym>> {
+    if (!typespecNamespaceBinding) return {};
+
+    const interfaces: Partial<Record<MetaMemberKey, Sym>> = {};
+
+    const vmns = typespecNamespaceBinding.exports!.get("ValueMethods")!;
+    for (const [name, sym] of vmns.exports!) {
+      if (sym.flags & SymbolFlags.Interface) {
+        interfaces[name as MetaMemberKey] = sym;
+      }
+    }
+
+    return interfaces;
   }
 
   function getStdType<T extends keyof StdTypes>(name: T): StdTypes[T] {
@@ -2290,13 +2307,39 @@ export function createChecker(program: Program): Checker {
         ? base.type!
         : checkTypeReferenceSymbol(base, node, mapper);
 
-    const metaMembers = sharedMetaProperties[metaMemberKey(baseType)];
-    if (!metaMembers) return undefined;
-    const metaProp = metaMembers[node.id.sv];
-    return metaProp.symbol;
+    const key = metaMemberKey(baseType);
+    const ifaceSym = sharedMetaInterfaces[key];
+    if (!ifaceSym) {
+      return undefined;
+    }
+
+    if (key === "Array") {
+      // Array needs instantiated.
+      const ifaceNode = ifaceSym.declarations[0] as InterfaceStatementNode;
+      const param: TemplateParameter = getTypeForNode(ifaceNode.templateParameters[0]) as any;
+      const ifaceType = getOrInstantiateTemplate(
+        ifaceNode,
+        [param],
+        [(baseType as Model).indexer!.value],
+        mapper
+      ) as Interface;
+      lateBindMemberContainer(ifaceType);
+      lateBindMembers(ifaceType, ifaceType.symbol!);
+      const table = getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
+      const member = table.get(node.id.sv);
+      return member;
+    } else {
+      const links = getSymbolLinks(ifaceSym);
+      const ifaceType = links.declaredType as Interface; // should be checked by now.
+      lateBindMemberContainer(ifaceType);
+      lateBindMembers(ifaceType, ifaceType.symbol!);
+      const table = getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
+      const member = table.get(node.id.sv);
+      return member;
+    }
   }
 
-  function metaMemberKey(baseType: Type) {
+  function metaMemberKey(baseType: Type): MetaMemberKey {
     return baseType.kind === "Model" && isArrayModelType(program, baseType)
       ? ("Array" as const)
       : baseType.kind === "Scalar" && isRelatedToScalar(baseType, getStdType("string"))

@@ -1,5 +1,5 @@
 import { notStrictEqual, strictEqual } from "assert";
-import { IntrinsicType, LogicCallExpression, Model, Scalar } from "../../src/core/types.js";
+import { LogicCallExpression, Model, Operation, Scalar } from "../../src/core/types.js";
 import { TestHost, createTestHost, expectDiagnostics } from "../../src/testing/index.js";
 
 describe.only("compiler: validate", () => {
@@ -271,7 +271,7 @@ describe.only("compiler: validate", () => {
     ]);
   });
 
-  it("can resolve built-in functions", async () => {
+  it.only("can resolve built-in functions", async () => {
     testHost.addTypeSpecFile(
       "main.tsp",
       `
@@ -289,11 +289,11 @@ describe.only("compiler: validate", () => {
     };
 
     const checkItems = M.validates.get("checkItems")!.logic as LogicCallExpression;
-    strictEqual((checkItems.target.type as IntrinsicType).name, "Array::someOf");
+    strictEqual((checkItems.target.type as Operation).name, "someOf");
     strictEqual(checkItems.arguments[0].kind, "LambdaExpression");
 
     const validateStr = M.validates.get("checkStr")!.logic as LogicCallExpression;
-    strictEqual((validateStr.target.type as IntrinsicType).name, "String::startsWith");
+    strictEqual((validateStr.target.type as Operation).name, "startsWith");
     strictEqual(validateStr.arguments[0].kind, "StringLiteral");
   });
 
