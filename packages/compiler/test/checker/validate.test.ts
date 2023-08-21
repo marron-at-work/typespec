@@ -2,7 +2,7 @@ import { notStrictEqual, strictEqual } from "assert";
 import { LogicCallExpression, Model, Operation, Scalar } from "../../src/core/types.js";
 import { TestHost, createTestHost, expectDiagnostics } from "../../src/testing/index.js";
 
-describe.only("compiler: validate", () => {
+describe("compiler: validate", () => {
   let testHost: TestHost;
 
   beforeEach(async () => {
@@ -271,7 +271,7 @@ describe.only("compiler: validate", () => {
     ]);
   });
 
-  it.only("can resolve built-in functions", async () => {
+  it("can resolve built-in functions", async () => {
     testHost.addTypeSpecFile(
       "main.tsp",
       `

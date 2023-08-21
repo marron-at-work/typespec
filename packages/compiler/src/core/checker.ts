@@ -303,8 +303,6 @@ export function createChecker(program: Program): Checker {
   const nullType = createType({ kind: "Intrinsic", name: "null" } as const);
   const nullSym = createSymbol(undefined, "null", SymbolFlags.None);
 
-  const sharedMetaProperties = createSharedMetaProperties();
-
   const projectionsByTypeKind = new Map<Type["kind"], ProjectionStatementNode[]>([
     ["Model", []],
     ["ModelProperty", []],
@@ -961,7 +959,6 @@ export function createChecker(program: Program): Checker {
     }
 
     if (tooFew) {
-      throw new Error("TOO FEW");
       reportCheckerDiagnostic(
         createDiagnostic({
           code: "invalid-template-args",
@@ -1957,9 +1954,9 @@ export function createChecker(program: Program): Checker {
         } else {
           addCompletions(base.metatypeMembers);
           const type = base.type ?? getTypeForNode(base.declarations[0], undefined);
-          const members = sharedMetaProperties[metaMemberKey(type)];
+          const members = getTableForMetaMembers(type, undefined);
           if (members) {
-            for (const sym of Object.values(members).map((m: any) => m.symbol)) {
+            for (const sym of members.values()) {
               addCompletion(sym.name, sym);
             }
           }
@@ -2307,6 +2304,13 @@ export function createChecker(program: Program): Checker {
         ? base.type!
         : checkTypeReferenceSymbol(base, node, mapper);
 
+    const table = getTableForMetaMembers(baseType, mapper);
+    if (!table) return undefined;
+
+    return table.get(node.id.sv);
+  }
+
+  function getTableForMetaMembers(baseType: Type, mapper: TypeMapper | undefined) {
     const key = metaMemberKey(baseType);
     const ifaceSym = sharedMetaInterfaces[key];
     if (!ifaceSym) {
@@ -2325,17 +2329,13 @@ export function createChecker(program: Program): Checker {
       ) as Interface;
       lateBindMemberContainer(ifaceType);
       lateBindMembers(ifaceType, ifaceType.symbol!);
-      const table = getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
-      const member = table.get(node.id.sv);
-      return member;
+      return getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
     } else {
       const links = getSymbolLinks(ifaceSym);
       const ifaceType = links.declaredType as Interface; // should be checked by now.
       lateBindMemberContainer(ifaceType);
       lateBindMembers(ifaceType, ifaceType.symbol!);
-      const table = getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
-      const member = table.get(node.id.sv);
-      return member;
+      return getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
     }
   }
 
@@ -5927,41 +5927,6 @@ export function createChecker(program: Program): Checker {
     if (stdType === "Record" && type === stdTypes["Record"]) return true;
     if (type.kind === "Model") return stdType === undefined || stdType === type.name;
     return false;
-  }
-
-  function createSharedMetaProperties(): Partial<Record<Type["kind"] | "Array" | "String", any>> {
-    function createSharedMetaProperty(scope: string, name: string) {
-      const type = createAndFinishType({ kind: "Intrinsic", name: scope + "::" + name });
-      const symbol = createSymbol(undefined, name, SymbolFlags.LateBound);
-      mutate(symbol).type = type as any; // intrinsics have a set name, need to fix this
-      return {
-        type,
-        symbol,
-      };
-    }
-
-    return {
-      Array: {
-        someOf: createSharedMetaProperty("Array", "someOf"),
-        allOf: createSharedMetaProperty("Array", "allOf"),
-        noneOf: createSharedMetaProperty("Array", "noneOf"),
-        find: createSharedMetaProperty("Array", "find"),
-        contains: createSharedMetaProperty("Array", "contains"),
-        first: createSharedMetaProperty("Array", "first"),
-        last: createSharedMetaProperty("Array", "last"),
-        sum: createSharedMetaProperty("Array", "sum"),
-        min: createSharedMetaProperty("Array", "min"),
-        max: createSharedMetaProperty("Array", "max"),
-        distinct: createSharedMetaProperty("Array", "distinct"),
-      },
-      String: {
-        startsWith: createSharedMetaProperty("String", "startsWith"),
-        endsWith: createSharedMetaProperty("String", "endsWith"),
-        contains: createSharedMetaProperty("String", "contains"),
-        slice: createSharedMetaProperty("String", "slice"),
-        concat: createSharedMetaProperty("String", "concat"),
-      },
-    };
   }
 }
 
