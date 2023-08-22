@@ -427,10 +427,13 @@ describe("compiler: validate", () => {
       "main.tsp",
       `
       @test model M {
-        prop: string[];
+        prop: numeric[];
 
         validate check: prop::contains();
-        validate check2: prop::contains("hi", "hi");
+        validate check2: prop::contains(1, 2);
+        validate check3: prop::sum(); // ok
+        validate check4: prop::sum((v) => { v; }); // ok
+        validate check5: prop::sum((v) => { v; }, 1); // error
       }
       `
     );
@@ -439,11 +442,15 @@ describe("compiler: validate", () => {
     expectDiagnostics(diagnostics, [
       {
         code: "invalid-function-args",
-        message: /Too many arguments. Expected at most 1 arguments but got 0./,
+        message: /Too few arguments. Expected at least 1 argument\(s\) but got 0./,
       },
       {
         code: "invalid-function-args",
-        message: /Too few arguments. Expected at least 1 arguments but got 2./,
+        message: /Too many arguments. Expected at most 1 argument\(s\) but got 2./,
+      },
+      {
+        code: "invalid-function-args",
+        message: /Too many arguments. Expected at most 1 argument\(s\) but got 2./,
       },
     ]);
   });

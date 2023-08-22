@@ -502,8 +502,8 @@ const diagnostics = {
     severity: "error",
     messages: {
       default: paramMessage`Invalid arguments for function "${"name"}".`,
-      tooFew: paramMessage`Too few arguments. Expected at least ${"expected"} arguments but got ${"actual"}.`,
-      tooMany: paramMessage`Too many arguments. Expected at most ${"expected"} arguments but got ${"actual"}.`,
+      tooFew: paramMessage`Too few arguments. Expected at least ${"expected"} argument(s) but got ${"actual"}.`,
+      tooMany: paramMessage`Too many arguments. Expected at most ${"expected"} argument(s) but got ${"actual"}.`,
       incorrect: paramMessage`Argument '${"name"}' has incorrect type. Expected ${"expected"} but got ${"actual"}.`,
     },
   },

@@ -3528,28 +3528,32 @@ export function createChecker(program: Program): Checker {
           );
           return;
         }
+        const expectedArgTypes = [...target.type.parameters.properties.values()];
 
-        if (target.type.parameters.properties.size < node.arguments.length) {
+        const minArgs = expectedArgTypes.filter((x) => !x.optional).length;
+        const maxArgs = expectedArgTypes.length;
+
+        if (node.arguments.length < minArgs) {
           reportCheckerDiagnostic(
             createDiagnostic({
               code: "invalid-function-args",
               messageId: "tooFew",
               format: {
                 actual: String(node.arguments.length),
-                expected: String(target.type.parameters.properties.size),
+                expected: String(minArgs),
               },
               target: node,
             })
           );
           return;
-        } else if (target.type.parameters.properties.size > node.arguments.length) {
+        } else if (node.arguments.length > maxArgs) {
           reportCheckerDiagnostic(
             createDiagnostic({
               code: "invalid-function-args",
               messageId: "tooMany",
               format: {
                 actual: String(node.arguments.length),
-                expected: String(target.type.parameters.properties.size),
+                expected: String(maxArgs),
               },
               target: node,
             })
@@ -3558,7 +3562,6 @@ export function createChecker(program: Program): Checker {
         }
 
         const args = [];
-        const expectedArgTypes = [...target.type.parameters.properties.values()];
         for (let i = 0; i < node.arguments.length; i++) {
           const expectedType = expectedArgTypes[i];
           const argType = checkLogicExpression(node.arguments[i], mapper);
@@ -5673,6 +5676,9 @@ export function createChecker(program: Program): Checker {
       return isAssignableToUnion(source, target, diagnosticTarget);
     } else if (target.kind === "Enum") {
       return isAssignableToEnum(source, target, diagnosticTarget);
+    } else if (target.kind === "Operation" && source.kind === "Operation") {
+      // todo: check if the operation is assignable
+      return [true, []];
     }
 
     return [false, [createUnassignableDiagnostic(source, target, diagnosticTarget)]];
