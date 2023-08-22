@@ -3514,12 +3514,73 @@ export function createChecker(program: Program): Checker {
       case SyntaxKind.ProjectionCallExpression: {
         const target = checkLogicExpression(node.target, mapper);
         if (!target) return;
-        const args = [];
-        for (const arg of node.arguments) {
-          const argResult = checkLogicExpression(arg, mapper);
-          if (!argResult) return;
-          args.push(argResult);
+
+        if (target.type.kind !== "Operation") {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "type-expected",
+              format: {
+                actual: target.type.kind,
+                expected: "Operation",
+              },
+              target: node,
+            })
+          );
+          return;
         }
+
+        if (target.type.parameters.properties.size < node.arguments.length) {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "invalid-function-args",
+              messageId: "tooFew",
+              format: {
+                actual: String(node.arguments.length),
+                expected: String(target.type.parameters.properties.size),
+              },
+              target: node,
+            })
+          );
+          return;
+        } else if (target.type.parameters.properties.size > node.arguments.length) {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "invalid-function-args",
+              messageId: "tooMany",
+              format: {
+                actual: String(node.arguments.length),
+                expected: String(target.type.parameters.properties.size),
+              },
+              target: node,
+            })
+          );
+          return;
+        }
+
+        const args = [];
+        const expectedArgTypes = [...target.type.parameters.properties.values()];
+        for (let i = 0; i < node.arguments.length; i++) {
+          const expectedType = expectedArgTypes[i];
+          const argType = checkLogicExpression(node.arguments[i], mapper);
+          if (!argType) return;
+          if (!isTypeAssignableTo(argType.type, expectedType.type, argType.type)[0]) {
+            reportCheckerDiagnostic(
+              createDiagnostic({
+                code: "invalid-function-args",
+                messageId: "incorrect",
+                format: {
+                  name: expectedType.name,
+                  actual: getTypeName(argType.type),
+                  expected: getTypeName(expectedType.type),
+                },
+                target: node,
+              })
+            );
+            return;
+          }
+          args.push(argType);
+        }
+
         return {
           logic: {
             kind: "CallExpression",

@@ -486,6 +486,10 @@ const diagnostics = {
       default: paramMessage`Shadowing parent template parmaeter with the same name "${"name"}"`,
     },
   },
+
+  /**
+   * Validation clause
+   */
   "type-expected": {
     severity: "error",
     messages: {
@@ -494,6 +498,15 @@ const diagnostics = {
     },
   },
 
+  "invalid-function-args": {
+    severity: "error",
+    messages: {
+      default: paramMessage`Invalid arguments for function "${"name"}".`,
+      tooFew: paramMessage`Too few arguments. Expected at least ${"expected"} arguments but got ${"actual"}.`,
+      tooMany: paramMessage`Too many arguments. Expected at most ${"expected"} arguments but got ${"actual"}.`,
+      incorrect: paramMessage`Argument '${"name"}' has incorrect type. Expected ${"expected"} but got ${"actual"}.`,
+    },
+  },
   /**
    * Configuration
    */

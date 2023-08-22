@@ -400,6 +400,73 @@ describe("compiler: validate", () => {
     );
 
     await testHost.compile("main.tsp");
+
+    // TODO: VALIDATE
+  });
+
+  it("emits diagnostics for incorrect function call target", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: string[];
+
+        validate check: prop(12);
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      { code: "type-expected", message: /Expected type of Operation but got Model/ },
+    ]);
+  });
+
+  it("emits diagnostics for too few or too many function call parameters", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: string[];
+
+        validate check: prop::contains();
+        validate check2: prop::contains("hi", "hi");
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      {
+        code: "invalid-function-args",
+        message: /Too many arguments. Expected at most 1 arguments but got 0./,
+      },
+      {
+        code: "invalid-function-args",
+        message: /Too few arguments. Expected at least 1 arguments but got 2./,
+      },
+    ]);
+  });
+
+  it("emits diagnostics for incorrect function call parameters", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: string[];
+
+        validate check: prop::contains(12);
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      {
+        code: "invalid-function-args",
+        message: /Argument 'value' has incorrect type. Expected string but got numeric./,
+      },
+    ]);
   });
 
   it.skip("doesn't allow references decorators", async () => {
