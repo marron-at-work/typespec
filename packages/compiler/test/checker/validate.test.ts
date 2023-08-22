@@ -1,8 +1,8 @@
 import { notStrictEqual, strictEqual } from "assert";
-import { IntrinsicType, LogicCallExpression, Model, Scalar } from "../../src/core/types.js";
+import { LogicCallExpression, Model, Operation, Scalar } from "../../src/core/types.js";
 import { TestHost, createTestHost, expectDiagnostics } from "../../src/testing/index.js";
 
-describe.only("compiler: validate", () => {
+describe("compiler: validate", () => {
   let testHost: TestHost;
 
   beforeEach(async () => {
@@ -289,11 +289,11 @@ describe.only("compiler: validate", () => {
     };
 
     const checkItems = M.validates.get("checkItems")!.logic as LogicCallExpression;
-    strictEqual((checkItems.target.type as IntrinsicType).name, "Array::someOf");
+    strictEqual((checkItems.target.type as Operation).name, "someOf");
     strictEqual(checkItems.arguments[0].kind, "LambdaExpression");
 
     const validateStr = M.validates.get("checkStr")!.logic as LogicCallExpression;
-    strictEqual((validateStr.target.type as IntrinsicType).name, "String::startsWith");
+    strictEqual((validateStr.target.type as Operation).name, "startsWith");
     strictEqual(validateStr.arguments[0].kind, "StringLiteral");
   });
 
@@ -400,6 +400,80 @@ describe.only("compiler: validate", () => {
     );
 
     await testHost.compile("main.tsp");
+
+    // TODO: VALIDATE
+  });
+
+  it("emits diagnostics for incorrect function call target", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: string[];
+
+        validate check: prop(12);
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      { code: "type-expected", message: /Expected type of Operation but got Model/ },
+    ]);
+  });
+
+  it("emits diagnostics for too few or too many function call parameters", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: numeric[];
+
+        validate check: prop::contains();
+        validate check2: prop::contains(1, 2);
+        validate check3: prop::sum(); // ok
+        validate check4: prop::sum((v) => { v; }); // ok
+        validate check5: prop::sum((v) => { v; }, 1); // error
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      {
+        code: "invalid-function-args",
+        message: /Too few arguments. Expected at least 1 argument\(s\) but got 0./,
+      },
+      {
+        code: "invalid-function-args",
+        message: /Too many arguments. Expected at most 1 argument\(s\) but got 2./,
+      },
+      {
+        code: "invalid-function-args",
+        message: /Too many arguments. Expected at most 1 argument\(s\) but got 2./,
+      },
+    ]);
+  });
+
+  it("emits diagnostics for incorrect function call parameters", async () => {
+    testHost.addTypeSpecFile(
+      "main.tsp",
+      `
+      @test model M {
+        prop: string[];
+
+        validate check: prop::contains(12);
+      }
+      `
+    );
+
+    const diagnostics = await testHost.diagnose("main.tsp");
+    expectDiagnostics(diagnostics, [
+      {
+        code: "invalid-function-args",
+        message: /Argument 'value' has incorrect type. Expected string but got numeric./,
+      },
+    ]);
   });
 
   it.skip("doesn't allow references decorators", async () => {

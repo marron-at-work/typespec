@@ -62,6 +62,7 @@ import {
   MemberExpressionNode,
   MemberNode,
   MemberType,
+  MetaMemberKey,
   Model,
   ModelExpressionNode,
   ModelIndexer,
@@ -302,8 +303,6 @@ export function createChecker(program: Program): Checker {
   const nullType = createType({ kind: "Intrinsic", name: "null" } as const);
   const nullSym = createSymbol(undefined, "null", SymbolFlags.None);
 
-  const sharedMetaProperties = createSharedMetaProperties();
-
   const projectionsByTypeKind = new Map<Type["kind"], ProjectionStatementNode[]>([
     ["Model", []],
     ["ModelProperty", []],
@@ -351,6 +350,7 @@ export function createChecker(program: Program): Checker {
     }
   }
 
+  const sharedMetaInterfaces: Partial<Record<MetaMemberKey, Sym>> = createSharedMetaInterfaces();
   let evalContext: EvalContext | undefined = undefined;
 
   const checker: Checker = {
@@ -412,6 +412,21 @@ export function createChecker(program: Program): Checker {
     mutate(typespecNamespaceBinding!.exports).set("null", nullSym);
     mutate(nullSym).type = nullType;
     getSymbolLinks(nullSym).type = nullType;
+  }
+
+  function createSharedMetaInterfaces(): Partial<Record<MetaMemberKey, Sym>> {
+    if (!typespecNamespaceBinding) return {};
+
+    const interfaces: Partial<Record<MetaMemberKey, Sym>> = {};
+
+    const vmns = typespecNamespaceBinding.exports!.get("ValueMethods")!;
+    for (const [name, sym] of vmns.exports!) {
+      if (sym.flags & SymbolFlags.Interface) {
+        interfaces[name as MetaMemberKey] = sym;
+      }
+    }
+
+    return interfaces;
   }
 
   function getStdType<T extends keyof StdTypes>(name: T): StdTypes[T] {
@@ -944,7 +959,6 @@ export function createChecker(program: Program): Checker {
     }
 
     if (tooFew) {
-      throw new Error("TOO FEW");
       reportCheckerDiagnostic(
         createDiagnostic({
           code: "invalid-template-args",
@@ -1940,9 +1954,9 @@ export function createChecker(program: Program): Checker {
         } else {
           addCompletions(base.metatypeMembers);
           const type = base.type ?? getTypeForNode(base.declarations[0], undefined);
-          const members = sharedMetaProperties[metaMemberKey(type)];
+          const members = getTableForMetaMembers(type, undefined);
           if (members) {
-            for (const sym of Object.values(members).map((m: any) => m.symbol)) {
+            for (const sym of members.values()) {
               addCompletion(sym.name, sym);
             }
           }
@@ -2290,13 +2304,42 @@ export function createChecker(program: Program): Checker {
         ? base.type!
         : checkTypeReferenceSymbol(base, node, mapper);
 
-    const metaMembers = sharedMetaProperties[metaMemberKey(baseType)];
-    if (!metaMembers) return undefined;
-    const metaProp = metaMembers[node.id.sv];
-    return metaProp.symbol;
+    const table = getTableForMetaMembers(baseType, mapper);
+    if (!table) return undefined;
+
+    return table.get(node.id.sv);
   }
 
-  function metaMemberKey(baseType: Type) {
+  function getTableForMetaMembers(baseType: Type, mapper: TypeMapper | undefined) {
+    const key = metaMemberKey(baseType);
+    const ifaceSym = sharedMetaInterfaces[key];
+    if (!ifaceSym) {
+      return undefined;
+    }
+
+    if (key === "Array") {
+      // Array needs instantiated.
+      const ifaceNode = ifaceSym.declarations[0] as InterfaceStatementNode;
+      const param: TemplateParameter = getTypeForNode(ifaceNode.templateParameters[0]) as any;
+      const ifaceType = getOrInstantiateTemplate(
+        ifaceNode,
+        [param],
+        [(baseType as Model).indexer!.value],
+        mapper
+      ) as Interface;
+      lateBindMemberContainer(ifaceType);
+      lateBindMembers(ifaceType, ifaceType.symbol!);
+      return getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
+    } else {
+      const links = getSymbolLinks(ifaceSym);
+      const ifaceType = links.declaredType as Interface; // should be checked by now.
+      lateBindMemberContainer(ifaceType);
+      lateBindMembers(ifaceType, ifaceType.symbol!);
+      return getOrCreateAugmentedSymbolTable(ifaceType.symbol!.members!);
+    }
+  }
+
+  function metaMemberKey(baseType: Type): MetaMemberKey {
     return baseType.kind === "Model" && isArrayModelType(program, baseType)
       ? ("Array" as const)
       : baseType.kind === "Scalar" && isRelatedToScalar(baseType, getStdType("string"))
@@ -3471,12 +3514,76 @@ export function createChecker(program: Program): Checker {
       case SyntaxKind.ProjectionCallExpression: {
         const target = checkLogicExpression(node.target, mapper);
         if (!target) return;
-        const args = [];
-        for (const arg of node.arguments) {
-          const argResult = checkLogicExpression(arg, mapper);
-          if (!argResult) return;
-          args.push(argResult);
+
+        if (target.type.kind !== "Operation") {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "type-expected",
+              format: {
+                actual: target.type.kind,
+                expected: "Operation",
+              },
+              target: node,
+            })
+          );
+          return;
         }
+        const expectedArgTypes = [...target.type.parameters.properties.values()];
+
+        const minArgs = expectedArgTypes.filter((x) => !x.optional).length;
+        const maxArgs = expectedArgTypes.length;
+
+        if (node.arguments.length < minArgs) {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "invalid-function-args",
+              messageId: "tooFew",
+              format: {
+                actual: String(node.arguments.length),
+                expected: String(minArgs),
+              },
+              target: node,
+            })
+          );
+          return;
+        } else if (node.arguments.length > maxArgs) {
+          reportCheckerDiagnostic(
+            createDiagnostic({
+              code: "invalid-function-args",
+              messageId: "tooMany",
+              format: {
+                actual: String(node.arguments.length),
+                expected: String(maxArgs),
+              },
+              target: node,
+            })
+          );
+          return;
+        }
+
+        const args = [];
+        for (let i = 0; i < node.arguments.length; i++) {
+          const expectedType = expectedArgTypes[i];
+          const argType = checkLogicExpression(node.arguments[i], mapper);
+          if (!argType) return;
+          if (!isTypeAssignableTo(argType.type, expectedType.type, argType.type)[0]) {
+            reportCheckerDiagnostic(
+              createDiagnostic({
+                code: "invalid-function-args",
+                messageId: "incorrect",
+                format: {
+                  name: expectedType.name,
+                  actual: getTypeName(argType.type),
+                  expected: getTypeName(expectedType.type),
+                },
+                target: node,
+              })
+            );
+            return;
+          }
+          args.push(argType);
+        }
+
         return {
           logic: {
             kind: "CallExpression",
@@ -5569,6 +5676,9 @@ export function createChecker(program: Program): Checker {
       return isAssignableToUnion(source, target, diagnosticTarget);
     } else if (target.kind === "Enum") {
       return isAssignableToEnum(source, target, diagnosticTarget);
+    } else if (target.kind === "Operation" && source.kind === "Operation") {
+      // todo: check if the operation is assignable
+      return [true, []];
     }
 
     return [false, [createUnassignableDiagnostic(source, target, diagnosticTarget)]];
@@ -5884,41 +5994,6 @@ export function createChecker(program: Program): Checker {
     if (stdType === "Record" && type === stdTypes["Record"]) return true;
     if (type.kind === "Model") return stdType === undefined || stdType === type.name;
     return false;
-  }
-
-  function createSharedMetaProperties(): Partial<Record<Type["kind"] | "Array" | "String", any>> {
-    function createSharedMetaProperty(scope: string, name: string) {
-      const type = createAndFinishType({ kind: "Intrinsic", name: scope + "::" + name });
-      const symbol = createSymbol(undefined, name, SymbolFlags.LateBound);
-      mutate(symbol).type = type as any; // intrinsics have a set name, need to fix this
-      return {
-        type,
-        symbol,
-      };
-    }
-
-    return {
-      Array: {
-        someOf: createSharedMetaProperty("Array", "someOf"),
-        allOf: createSharedMetaProperty("Array", "allOf"),
-        noneOf: createSharedMetaProperty("Array", "noneOf"),
-        find: createSharedMetaProperty("Array", "find"),
-        contains: createSharedMetaProperty("Array", "contains"),
-        first: createSharedMetaProperty("Array", "first"),
-        last: createSharedMetaProperty("Array", "last"),
-        sum: createSharedMetaProperty("Array", "sum"),
-        min: createSharedMetaProperty("Array", "min"),
-        max: createSharedMetaProperty("Array", "max"),
-        distinct: createSharedMetaProperty("Array", "distinct"),
-      },
-      String: {
-        startsWith: createSharedMetaProperty("String", "startsWith"),
-        endsWith: createSharedMetaProperty("String", "endsWith"),
-        contains: createSharedMetaProperty("String", "contains"),
-        slice: createSharedMetaProperty("String", "slice"),
-        concat: createSharedMetaProperty("String", "concat"),
-      },
-    };
   }
 }
 

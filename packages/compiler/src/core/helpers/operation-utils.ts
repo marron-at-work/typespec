@@ -20,6 +20,8 @@ export function listOperationsIn(
 ): Operation[] {
   const operations: Operation[] = [];
 
+  const globalNamespace = container.kind === "Namespace" && container.name === "";
+
   function addOperations(current: Namespace | Interface) {
     if (current.kind === "Interface" && isTemplateDeclaration(current)) {
       // Skip template interface operations
@@ -42,6 +44,9 @@ export function listOperationsIn(
       ];
 
       for (const child of children) {
+        if (globalNamespace && child.name === "TypeSpec" && child.namespace === container) {
+          continue;
+        }
         addOperations(child);
       }
     }

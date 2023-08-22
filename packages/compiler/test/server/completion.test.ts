@@ -948,14 +948,22 @@ describe("compiler: server: completion", () => {
       {
         label: "min",
         insertText: "min",
-        kind: CompletionItemKind.Function,
-        documentation: undefined,
+        kind: CompletionItemKind.Method,
+        documentation: {
+          kind: "markdown",
+          value:
+            "```typespec\nop TypeSpec.ValueMethods.min(cb: TypeSpec.ValueMethods.Private.NumericReturnCb): numeric\n```",
+        },
       },
       {
         label: "max",
         insertText: "max",
-        kind: CompletionItemKind.Function,
-        documentation: undefined,
+        kind: CompletionItemKind.Method,
+        documentation: {
+          kind: "markdown",
+          value:
+            "```typespec\nop TypeSpec.ValueMethods.max(cb: TypeSpec.ValueMethods.Private.NumericReturnCb): numeric\n```",
+        },
       },
     ]);
   });
@@ -980,7 +988,7 @@ describe("compiler: server: completion", () => {
     ]);
   });
 
-  it.only("Completes members of the type of model property references inside validates clauses", async () => {
+  it("Completes members of the type of model property references inside validates clauses", async () => {
     const completions = await complete(
       `
       model Foo {

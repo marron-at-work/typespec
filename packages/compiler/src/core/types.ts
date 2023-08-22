@@ -208,6 +208,8 @@ export type IntrinsicScalarName =
   | "boolean"
   | "url";
 
+export type MetaMemberKey = Type["kind"] | "Array" | "String";
+
 export type NeverIndexer = { key: NeverType; value: undefined };
 export type ModelIndexer = {
   key: Scalar;

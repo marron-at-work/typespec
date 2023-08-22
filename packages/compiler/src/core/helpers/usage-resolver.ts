@@ -68,7 +68,12 @@ function trackUsage(
 }
 
 function addUsagesInNamespace(namespace: Namespace, usages: Map<TrackableType, UsageFlags>): void {
+  const globalNamespace = namespace.name === "";
+
   for (const subNamespace of namespace.namespaces.values()) {
+    if (globalNamespace && subNamespace.name === "TypeSpec") {
+      continue;
+    }
     addUsagesInNamespace(subNamespace, usages);
   }
   for (const Interface of namespace.interfaces.values()) {
